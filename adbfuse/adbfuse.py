@@ -45,7 +45,7 @@ class AdbFuse(Fuse):
             myStat.st_nlink = 2
         else:
             process = subprocess.Popen(
-                ['adb', 'shell', 'stat', '-t', path],
+                ['adb', 'shell', 'stat', '-t', '"%s"' % path],
                 stdout = subprocess.PIPE,
                 stderr = subprocess.PIPE,
             )
@@ -74,11 +74,11 @@ class AdbFuse(Fuse):
 
     def readdir(self, path, offset):
         process = subprocess.Popen(
-            ['adb', 'shell', 'ls', '--color=none', path], 
+            ['adb', 'shell', 'ls', '--color=none', "-1", path], 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE)
         (out_data, err_data) = process.communicate()
-        for r in out_data.split():
+        for r in out_data.splitlines():
             yield fuse.Direntry(r)
 
     def open(self, path, flags):
@@ -164,10 +164,10 @@ class AdbFuse(Fuse):
         #(out_data, err_data) = process.communicate()
 
     def mknod(self, path, mode, dev):
-        """ Check success, VFAT on SD do not allow mknod """
-        print "*** path: %s, mode: %s, dev: %s" % (path, mode, dev,)
+        #print "*** path: %s, mode: %s, dev: %s" % (path, mode, dev,)
         process = subprocess.Popen(
-            ['adb', 'shell', 'mknod', "-m", mode, "." + path, dev],
+            #['adb', 'shell', 'mknod', "-m", mode, '".' + path + '"', dev],
+            ['adb', 'shell', 'touch', '.' + path],
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
