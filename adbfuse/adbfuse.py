@@ -5,11 +5,13 @@
 #
 #    This program can be distributed under the terms of the GNU GPL v3.
 #    See the file COPYING.
-#    
+#
 #    v0.1-pre-alpha-wip
 #
 
-import os, stat, errno
+import os
+import stat
+import errno
 import subprocess
 
 import fuse
@@ -22,7 +24,9 @@ if not hasattr(fuse, '__version__'):
 
 fuse.fuse_python_api = (0, 2)
 
+
 class MyStat(fuse.Stat):
+
     def __init__(self):
         self.st_mode = 0
         self.st_ino = 0
@@ -37,6 +41,10 @@ class MyStat(fuse.Stat):
 
 
 class AdbFuse(Fuse):
+
+    def __init__(self, *args, **kw):
+        fuse.Fuse.__init__(self, *args, **kw)
+
     def getattr(self, path):
         myStat = MyStat()
 
@@ -74,8 +82,8 @@ class AdbFuse(Fuse):
 
     def readdir(self, path, offset):
         process = subprocess.Popen(
-            ['adb', 'shell', 'ls', '--color=none', "-1", path], 
-            stdout=subprocess.PIPE, 
+            ['adb', 'shell', 'ls', '--color=none', "-1", path],
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         (out_data, err_data) = process.communicate()
         for r in out_data.splitlines():
@@ -87,12 +95,12 @@ class AdbFuse(Fuse):
             return -errno.EACCES
 
     def read(self, path, size, offset):
-        local_path = '/dev/shm%s' % (path,)
-        
+        local_path = '/dev/shm%s' % (path, )
+
         if not os.path.exists(local_path):
             process = subprocess.Popen(
                 ['adb', 'pull', path, local_path],
-                stdout=subprocess.PIPE, 
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE)
             (out_data, err_data) = process.communicate()
 
@@ -108,58 +116,58 @@ class AdbFuse(Fuse):
     def readlink(self, path):
         process = subprocess.Popen(
             ['adb', 'shell', 'readlink', path],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         (out_data, err_data) = process.communicate()
 
-        return '.%s' % (out_data.split()[0],)
+        return '.%s' % (out_data.split()[0], )
 
     def unlink(self, path):
+        #(out_data, err_data) = process.communicate()
         process = subprocess.Popen(
             ['adb', 'shell', 'rm', '-f', path],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
 
     def rmdir(self, path):
+        #(out_data, err_data) = process.communicate()
         process = subprocess.Popen(
             ['adb', 'shell', 'rmdir', path],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
 
     def symlink(self, path, path1):
+        #(out_data, err_data) = process.communicate()
         process = subprocess.Popen(
             ['adb', 'shell', 'ln', '-s', path, "." + path1],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
 
     def rename(self, path, path1):
         process = subprocess.Popen(
             ['adb', 'shell', 'mv', "." + path, "." + path1],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
     def link(self, path, path1):
         process = subprocess.Popen(
             ['adb', 'shell', 'ln', "." + path, "." + path1],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
     def chmod(self, path, mode):
         process = subprocess.Popen(
             ['adb', 'shell', 'chmod', "." + path, mode],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
     def chown(self, path, user, group):
         process = subprocess.Popen(
             ['adb', 'shell', 'chown', "." + path, user, group],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
@@ -168,24 +176,24 @@ class AdbFuse(Fuse):
         process = subprocess.Popen(
             #['adb', 'shell', 'mknod', "-m", mode, '".' + path + '"', dev],
             ['adb', 'shell', 'touch', '.' + path],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
-        
+
     def mkdir(self, path, mode):
         process = subprocess.Popen(
             ['adb', 'shell', 'mkdir', "." + path, mode],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
     def utime(self, path, times):
         process = subprocess.Popen(
             ['adb', 'shell', 'touch', "-d", times, "." + path],
-            stdout=subprocess.PIPE, 
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
- 
+
 def main():
     usage="""
 Userspace adb filesystem
