@@ -19,8 +19,8 @@ from fuse import Fuse
 
 
 if not hasattr(fuse, '__version__'):
-    raise RuntimeError, \
-        "your fuse-py doesn't know of fuse.__version__, probably it's too old."
+    raise RuntimeError(\
+    "your fuse-py doesn't know of fuse.__version__,\probably it's too old.")
 
 fuse.fuse_python_api = (0, 2)
 
@@ -120,7 +120,12 @@ class AdbFuse(Fuse):
             stderr=subprocess.PIPE)
         (out_data, err_data) = process.communicate()
 
-        return '.%s' % (out_data.split()[0], )
+        target = out_data.split()[0]
+
+        if target.startswith('/'):
+            return '.%s' % (target, )
+        else:
+            return '%s' % (target, )
 
     def unlink(self, path):
         #(out_data, err_data) = process.communicate()
