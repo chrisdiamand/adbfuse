@@ -17,7 +17,6 @@ import subprocess
 import fuse
 from fuse import Fuse
 
-
 if not hasattr(fuse, '__version__'):
     raise RuntimeError(\
     "your fuse-py doesn't know of fuse.__version__,\probably it's too old.")
@@ -43,6 +42,11 @@ class MyStat(fuse.Stat):
 class AdbFuse(Fuse):
 
     def __init__(self, *args, **kw):
+        self.home = os.path.expanduser('~')
+        self.cache = '%s/.adbfuse' % (self.home, )
+        if not os.path.isdir(self.cache):
+            os.makedirs(self.cache)
+            
         fuse.Fuse.__init__(self, *args, **kw)
 
     def getattr(self, path):
@@ -95,7 +99,8 @@ class AdbFuse(Fuse):
             return -errno.EACCES
 
     def read(self, path, size, offset):
-        local_path = '/dev/shm%s' % (path, )
+        #local_path = '/dev/shm%s' % (path, )
+        local_path = '%s%s' % (self.cache, path, )        
 
         if not os.path.exists(local_path):
             process = subprocess.Popen(
@@ -110,6 +115,8 @@ class AdbFuse(Fuse):
         buf = f.read(size)
         f.close()
         # Remove local temporary file??
+        # Not removing has no cache problem but also speed up
+        # next readings...
         #os.unlink(local)
         return buf
 
