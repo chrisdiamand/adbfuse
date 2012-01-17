@@ -121,7 +121,6 @@ class AdbFuse(Fuse):
         (out_data, err_data) = process.communicate()
 
         target = out_data.split()[0]
-
         if target.startswith('/'):
             return '.%s' % (target, )
         else:
