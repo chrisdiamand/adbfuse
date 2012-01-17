@@ -57,7 +57,7 @@ class AdbFuse(Fuse):
             myStat.st_nlink = 2
         else:
             process = subprocess.Popen(
-                ['adb', 'shell', 'stat', '-t', '"%s"' % path],
+                ['adb', 'shell', 'stat', '-t', '""%s""' % path],
                 stdout = subprocess.PIPE,
                 stderr = subprocess.PIPE,
             )
