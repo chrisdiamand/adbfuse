@@ -50,6 +50,7 @@ class AdbFuse(Fuse):
         fuse.Fuse.__init__(self, *args, **kw)
 
     def getattr(self, path):
+        print "DEBUG -- getattr with path %s" % path
         myStat = MyStat()
 
         if path == '/':
@@ -85,6 +86,7 @@ class AdbFuse(Fuse):
         return myStat
 
     def readdir(self, path, offset):
+        print "DEBUG -- readdir with path %s and offset %s" % (path, offset, )
         process = subprocess.Popen(
             ['adb', 'shell', 'ls', '--color=none', "-1", path],
             stdout=subprocess.PIPE,
@@ -99,26 +101,46 @@ class AdbFuse(Fuse):
             return -errno.EACCES
 
     def read(self, path, size, offset):
-        #local_path = '/dev/shm%s' % (path, )
-        local_path = '%s%s' % (self.cache, path, )        
+        print "DEBUG -- read with path %s, size %s and offset %s" % (
+            path, size, offset, )
+            
+        print " ".join(['adb', 'shell', 'dd', 'if="%s"' % (path, ),
+             'skip=%s' % (offset, ), 'bs=1', 'count=%s' % (size, ), '\n'])
 
-        if not os.path.exists(local_path):
-            process = subprocess.Popen(
-                ['adb', 'pull', path, local_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE)
-            (out_data, err_data) = process.communicate()
+        process = subprocess.Popen(
+            ['adb', 'shell', 'dd', 'if=""%s""' % (path, ),
+             'skip=%s' % (offset, ), 'bs=1', 'count=%s' % (size, ), '\n'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE)
+        (out_data, err_data) = process.communicate()
+	#import pdb; pdb.set_trace()
+        
+        # Remove the dd status lines
+        returned_data = out_data.splitlines()[:-3]
+        print "Returning %d bytes" % (len("\n".join(returned_data)), )
+        return "\n".join(returned_data)
+            
+        #local_path = '%s%s' % (self.cache, path, )        
+
+        #if not os.path.exists(local_path):
+        #    process = subprocess.Popen(
+        #        ['adb', 'pull', path, local_path],
+        #        stdout=subprocess.PIPE,
+        #        stderr=subprocess.PIPE)
+        #    (out_data, err_data) = process.communicate()
 
         # Open the local file and return data
-        f = open(local_path, 'r')
-        f.seek(offset)
-        buf = f.read(size)
-        f.close()
+        #f = open(local_path, 'r')
+        #f.seek(offset)
+        #buf = f.read(size)
+        #f.close()
+        
         # Remove local temporary file??
         # Not removing has no cache problem but also speed up
         # next readings...
         #os.unlink(local)
-        return buf
+        
+        #return buf
 
     def readlink(self, path):
         process = subprocess.Popen(
