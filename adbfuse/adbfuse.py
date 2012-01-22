@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- encoding: utf-8 -*-
 #
-#    Copyright (C) 2010  Juan Martín <android@nauj27.com>
+#    Copyright (C) 2012  Juan Martín <android@nauj27.com>
 #
 #    This program can be distributed under the terms of the GNU GPL v3.
 #    See the file COPYING.
@@ -16,6 +16,11 @@ import subprocess
 
 import fuse
 from fuse import Fuse
+from datetime import datetime
+
+# TODO: it should be a parameter
+FILE_CACHE_TIMEOUT = 60 # in seconds
+DIR_CACHE_TIMEOUT = 180 # in seconds
 
 if not hasattr(fuse, '__version__'):
     raise RuntimeError(\
@@ -38,23 +43,53 @@ class MyStat(fuse.Stat):
         self.st_ctime = 0
 
 
+class FileData(object):
+
+    def __init__(self, name, attr):
+        self.name = name           # File name
+        self.attr = attr           # MyStat object
+        self.time = datetime.now() # Creation of the File object
+
+    def is_recent(self):
+        return (datetime.now() - self.time).seconds < FILE_CACHE_TIMEOUT
+
+
+class DirectoryData(object):
+
+    def __init__(self, name, content):
+        self.name = name           # Directory name
+        self.content = content     # Directory content
+        self.time = datetime.now() # Creation of the object
+
+    def is_recent(self):
+        return (datetime.now() - self.time).seconds < DIR_CACHE_TIMEOUT
+
+
 class AdbFuse(Fuse):
 
     def __init__(self, *args, **kw):
-        self.home = os.path.expanduser('~')
-        self.cache = '%s/.adbfuse' % (self.home, )
-        if not os.path.isdir(self.cache):
-            os.makedirs(self.cache)
+#        self.home = os.path.expanduser('~')
+#        self.cache = '%s/.adbfuse' % (self.home, )
+#        if not os.path.isdir(self.cache):
+#            os.makedirs(self.cache)
             
+        self.dirs = {}
         self.files = {}
-            
         fuse.Fuse.__init__(self, *args, **kw)
 
     def getattr(self, path):
-        # TODO: This method is invoked very often. I should search a method
-        #       to  have a attributes cache.  Maybe a file class and a list
-        #       of objects with size limit and fifo for the list.
         #print "DEBUG -- getattr with path %s" % path
+
+        # Search for data in the files cache data
+        if self.files.has_key(path):
+            fileData = self.files[path]
+            if fileData.is_recent():
+                if path.endswith('hello.py'):
+                    print "File size: %d" % (fileData.attr.st_size, )
+                return fileData.attr
+
+        # There are not cache data or cache data is too old
+        print "DEBUG -- getattr with path %s" % path
         myStat = MyStat()
 
         if path == '/':
@@ -88,16 +123,30 @@ class AdbFuse(Fuse):
             else:
                 return -errno.ENOENT
 
+        self.files[path] = FileData(path, myStat)
         return myStat
 
     def readdir(self, path, offset):
+        # Use cache if possible
+        if self.dirs.has_key(path):
+            directoryData = self.dirs[path]
+            if directoryData.is_recent():
+                for r in directoryData.content:
+                    yield fuse.Direntry(r)
+                return
+
+        # There is no cache data of cache data is not recent
         print "DEBUG -- readdir with path %s and offset %s" % (path, offset, )
+
         process = subprocess.Popen(
             ['adb', 'shell', 'ls', '--color=none', "-1", path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         (out_data, err_data) = process.communicate()
-        for r in out_data.splitlines():
+
+        content = out_data.splitlines()
+        self.dirs[path] = DirectoryData(path, content)
+        for r in content:
             yield fuse.Direntry(r)
 
     def open(self, path, flags):
@@ -106,49 +155,43 @@ class AdbFuse(Fuse):
             return -errno.EACCES
 
     def read(self, path, size, offset):
-        print "DEBUG -- read with path %s, size %s and offset %s" % (
+        print "DEBUG -- read with path %s, size %d and offset %d" % (
             path, size, offset, )
+
+        if self.files.has_key(path):
+            fileData = self.files[path]
+            if offset < fileData.attr.st_size:
+                # Fix size
+                if offset + size > fileData.attr.st_size:
+                    size = fileData.attr.st_size - offset
+
+                print " ".join(['adb', 'shell', 'dd', 'if="%s"' % (path, ),
+                    'skip=%d' % (offset, ), 'bs=1', 'count=%d' % (size, )])
+
+                #'2>', '/dev/null""'],
+                # THIS IS BROKEN RIGHT NOW
+                # adb shell "dd if=file 2> /dev/null" works like a charm
+                # but, how to get it inside Popen??
+                process = subprocess.Popen(
+                    ['adb', 'shell', 'dd', 'if=""%s""' % (path, ),
+                    'skip=%d' % (offset, ), 'bs=1', 'count=%d' % (size, )],
+                    stdout = subprocess.PIPE,
+                    stderr = subprocess.PIPE,
+                    universal_newlines = False)
+                (out_data, err_data) = process.communicate()
+                import pdb; pdb.set_trace()
+                
+                # Remove the dd tail status lines
+                returned_data = out_data.splitlines(True)[:-3]
+                rawdata = ''.join(returned_data)
+            else:
+                rawdata = ''
+        else:
+            rawdata = '' 
+
+        print "Returning %d bytes" % (len(rawdata), )
+        return rawdata
             
-        
-            
-        print " ".join(['adb', 'shell', 'dd', 'if="%s"' % (path, ),
-             'skip=%s' % (offset, ), 'bs=1', 'count=%s' % (size, ), '\n'])
-
-        process = subprocess.Popen(
-            ['adb', 'shell', 'dd', 'if=""%s""' % (path, ),
-             'skip=%s' % (offset, ), 'bs=1', 'count=%s' % (size, ), '\n'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        (out_data, err_data) = process.communicate()
-        #import pdb; pdb.set_trace()
-        
-        # Remove the dd status lines
-        returned_data = out_data.splitlines(True)[:-3]
-        print "Returning %d bytes" % (len("".join(returned_data)), )
-        return "".join(returned_data)
-            
-        #local_path = '%s%s' % (self.cache, path, )        
-
-        #if not os.path.exists(local_path):
-        #    process = subprocess.Popen(
-        #        ['adb', 'pull', path, local_path],
-        #        stdout=subprocess.PIPE,
-        #        stderr=subprocess.PIPE)
-        #    (out_data, err_data) = process.communicate()
-
-        # Open the local file and return data
-        #f = open(local_path, 'r')
-        #f.seek(offset)
-        #buf = f.read(size)
-        #f.close()
-        
-        # Remove local temporary file??
-        # Not removing has no cache problem but also speed up
-        # next readings...
-        #os.unlink(local)
-        
-        #return buf
-
     def readlink(self, path):
         process = subprocess.Popen(
             ['adb', 'shell', 'readlink', path],
