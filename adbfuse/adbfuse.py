@@ -6,7 +6,7 @@
 #    This program can be distributed under the terms of the GNU GPL v3.
 #    See the file COPYING.
 #
-#    v0.1-pre-alpha-wip
+#    v0.1-alpha-wip
 #
 
 import os
@@ -22,7 +22,6 @@ if not hasattr(fuse, '__version__'):
     "your fuse-py doesn't know of fuse.__version__,\probably it's too old.")
 
 fuse.fuse_python_api = (0, 2)
-
 
 class MyStat(fuse.Stat):
 
@@ -47,10 +46,15 @@ class AdbFuse(Fuse):
         if not os.path.isdir(self.cache):
             os.makedirs(self.cache)
             
+        self.files = {}
+            
         fuse.Fuse.__init__(self, *args, **kw)
 
     def getattr(self, path):
-        print "DEBUG -- getattr with path %s" % path
+        # TODO: This method is invoked very often. I should search a method
+        #       to  have a attributes cache.  Maybe a file class and a list
+        #       of objects with size limit and fifo for the list.
+        #print "DEBUG -- getattr with path %s" % path
         myStat = MyStat()
 
         if path == '/':
@@ -63,6 +67,7 @@ class AdbFuse(Fuse):
                 stderr = subprocess.PIPE,
             )
             (out_data, err_data) = process.communicate()
+            #import pdb; pdb.set_trace()
 
             # remove the path from the output string
             out_data = out_data[len(path)+1:]
@@ -104,6 +109,8 @@ class AdbFuse(Fuse):
         print "DEBUG -- read with path %s, size %s and offset %s" % (
             path, size, offset, )
             
+        
+            
         print " ".join(['adb', 'shell', 'dd', 'if="%s"' % (path, ),
              'skip=%s' % (offset, ), 'bs=1', 'count=%s' % (size, ), '\n'])
 
@@ -113,12 +120,12 @@ class AdbFuse(Fuse):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         (out_data, err_data) = process.communicate()
-	#import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         
         # Remove the dd status lines
-        returned_data = out_data.splitlines()[:-3]
-        print "Returning %d bytes" % (len("\n".join(returned_data)), )
-        return "\n".join(returned_data)
+        returned_data = out_data.splitlines(True)[:-3]
+        print "Returning %d bytes" % (len("".join(returned_data)), )
+        return "".join(returned_data)
             
         #local_path = '%s%s' % (self.cache, path, )        
 
@@ -156,25 +163,25 @@ class AdbFuse(Fuse):
             return '%s' % (target, )
 
     def unlink(self, path):
-        #(out_data, err_data) = process.communicate()
         process = subprocess.Popen(
             ['adb', 'shell', 'rm', '-f', path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
+        #(out_data, err_data) = process.communicate()
 
     def rmdir(self, path):
-        #(out_data, err_data) = process.communicate()
         process = subprocess.Popen(
             ['adb', 'shell', 'rmdir', path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
+        #(out_data, err_data) = process.communicate()
 
     def symlink(self, path, path1):
-        #(out_data, err_data) = process.communicate()
         process = subprocess.Popen(
             ['adb', 'shell', 'ln', '-s', path, "." + path1],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
+        #(out_data, err_data) = process.communicate()
 
     def rename(self, path, path1):
         process = subprocess.Popen(
