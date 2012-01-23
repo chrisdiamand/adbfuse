@@ -172,12 +172,12 @@ class AdbFuse(Fuse):
                 # THIS IS BROKEN RIGHT NOW
                 # adb shell "dd if=file 2> /dev/null" works like a charm
                 # but, how to get it inside Popen??
-                process = subprocess.Popen(
-                    ['adb', 'shell', 'dd', 'if=""%s""' % (path, ),
-                    'skip=%d' % (offset, ), 'bs=1', 'count=%d' % (size, )],
-                    stdout = subprocess.PIPE,
-                    stderr = subprocess.PIPE,
-                    universal_newlines = False)
+                # Try check_output, only for python >= 2.7.x - not for debian 6 :(
+                # fu = subprocess.check_call(
+                #       ['adb', 'shell', 'dd', 'if=/mnt/sdcard/j/he llo', '2>', '/dev/null'])
+                process = subprocess.call(
+                    ['adb', 'shell', 'dd', 'if=%s' % (path, ),
+                    'skip=%d' % (offset, ), 'bs=1', 'count=%d' % (size, )])
                 (out_data, err_data) = process.communicate()
                 import pdb; pdb.set_trace()
                 
