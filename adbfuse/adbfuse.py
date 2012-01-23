@@ -68,10 +68,10 @@ class DirectoryData(object):
 class AdbFuse(Fuse):
 
     def __init__(self, *args, **kw):
-#        self.home = os.path.expanduser('~')
-#        self.cache = '%s/.adbfuse' % (self.home, )
-#        if not os.path.isdir(self.cache):
-#            os.makedirs(self.cache)
+        self.home = os.path.expanduser('~')
+        self.cache = '%s/.adbfuse' % (self.home, )
+        if not os.path.isdir(self.cache):
+            os.makedirs(self.cache)
             
         self.dirs = {}
         self.files = {}
@@ -165,25 +165,23 @@ class AdbFuse(Fuse):
                 if offset + size > fileData.attr.st_size:
                     size = fileData.attr.st_size - offset
 
-                print " ".join(['adb', 'shell', 'dd', 'if="%s"' % (path, ),
-                    'skip=%d' % (offset, ), 'bs=1', 'count=%d' % (size, )])
+                process = subprocess.check_call(
+                    ['adb', 'shell', 'dd', 'if=%s' % path, 
+                     'of=/cache/adbfuse.swp', 'skip=%d' % offset, 
+                     'bs=1', 'count=%d' % size])
 
-                #'2>', '/dev/null""'],
-                # THIS IS BROKEN RIGHT NOW
-                # adb shell "dd if=file 2> /dev/null" works like a charm
-                # but, how to get it inside Popen??
-                # Try check_output, only for python >= 2.7.x - not for debian 6 :(
-                # fu = subprocess.check_call(
-                #       ['adb', 'shell', 'dd', 'if=/mnt/sdcard/j/he llo', '2>', '/dev/null'])
-                process = subprocess.call(
-                    ['adb', 'shell', 'dd', 'if=%s' % (path, ),
-                    'skip=%d' % (offset, ), 'bs=1', 'count=%d' % (size, )])
-                (out_data, err_data) = process.communicate()
-                import pdb; pdb.set_trace()
-                
-                # Remove the dd tail status lines
-                returned_data = out_data.splitlines(True)[:-3]
-                rawdata = ''.join(returned_data)
+                if process != 0:
+                    rawdata = ''
+                else:
+                    subprocess.call(
+                        ['adb', 'pull', 
+                         '/cache/adbfuse.swp', 
+                         '%s%s' % (self.cache, path, )])
+
+                    chunk = open('%s%s' % (self.cache, path, ))
+                    rawdata = chunk.read()
+                    chunk.close()
+                    os.unlink('%s%s' % (self.cache, path, ))
             else:
                 rawdata = ''
         else:
