@@ -19,8 +19,11 @@ from fuse import Fuse
 from datetime import datetime
 
 # TODO: it should be a parameter
-FILE_CACHE_TIMEOUT = 60 # in seconds
-DIR_CACHE_TIMEOUT = 180 # in seconds
+DIR_CACHE_TIMEOUT = 180          # in seconds
+FILE_CACHE_TIMEOUT = 60          # in seconds
+FILE_CACHE_CHUNK_SIZE = 2097152  # 2MB in bytes (1024)
+DD_BLOCK_SIZE = 1024
+DD_COUNT      = 2048
 
 if not hasattr(fuse, '__version__'):
     raise RuntimeError(\
@@ -49,6 +52,7 @@ class FileData(object):
         self.name = name           # File name
         self.attr = attr           # MyStat object
         self.time = datetime.now() # Creation of the File object
+        self.offset = 0      # Local chunk offset
 
     def is_recent(self):
         return (datetime.now() - self.time).seconds < FILE_CACHE_TIMEOUT
@@ -78,18 +82,16 @@ class AdbFuse(Fuse):
         fuse.Fuse.__init__(self, *args, **kw)
 
     def getattr(self, path):
-        #print "DEBUG -- getattr with path %s" % path
 
         # Search for data in the files cache data
         if self.files.has_key(path):
             fileData = self.files[path]
             if fileData.is_recent():
-                if path.endswith('hello.py'):
+                if path.endswith('llo'):
                     print "File size: %d" % (fileData.attr.st_size, )
                 return fileData.attr
 
         # There are not cache data or cache data is too old
-        print "DEBUG -- getattr with path %s" % path
         myStat = MyStat()
 
         if path == '/':
@@ -97,12 +99,11 @@ class AdbFuse(Fuse):
             myStat.st_nlink = 2
         else:
             process = subprocess.Popen(
-                ['adb', 'shell', 'stat', '-t', '""%s""' % path],
+                ['adb', 'shell', 'stat', '-t', path],
                 stdout = subprocess.PIPE,
                 stderr = subprocess.PIPE,
             )
             (out_data, err_data) = process.communicate()
-            #import pdb; pdb.set_trace()
 
             # remove the path from the output string
             out_data = out_data[len(path)+1:]
@@ -136,8 +137,6 @@ class AdbFuse(Fuse):
                 return
 
         # There is no cache data of cache data is not recent
-        print "DEBUG -- readdir with path %s and offset %s" % (path, offset, )
-
         process = subprocess.Popen(
             ['adb', 'shell', 'ls', '--color=none', "-1", path],
             stdout=subprocess.PIPE,
@@ -158,34 +157,44 @@ class AdbFuse(Fuse):
         print "DEBUG -- read with path %s, size %d and offset %d" % (
             path, size, offset, )
 
+        rawdata = ''
         if self.files.has_key(path):
             fileData = self.files[path]
+            
+            # Check if offset is lesser than file size
             if offset < fileData.attr.st_size:
-                # Fix size
+                # Fix size for reads beyond the file size
                 if offset + size > fileData.attr.st_size:
                     size = fileData.attr.st_size - offset
 
-                process = subprocess.check_call(
-                    ['adb', 'shell', 'dd', 'if=%s' % path, 
-                     'of=/cache/adbfuse.swp', 'skip=%d' % offset, 
-                     'bs=1', 'count=%d' % size])
-
-                if process != 0:
-                    rawdata = ''
+                # Slice a chunk from file on the device (tmpfs)
+                if offset + DD_BLOCK_SIZE * DD_COUNT > fileData.attr.st_size:
+                    process_result = subprocess.call(
+                        ['adb', 'shell', 'dd', 'if=%s' % path, 
+                         'of=/mnt/asec/adbfuse.swp', 'skip=%d' % offset, 
+                         'bs=1', 'count=%d' % (fileData.attr.st_size - offset, )])
                 else:
+                    process_result = subprocess.call(
+                        ['adb', 'shell', 'dd', 'if=%s' % path, 
+                         'of=/mnt/asec/adbfuse.swp', 'skip=%d' % offset, 
+                         'bs=%d' % (DD_BLOCK_SIZE, ),
+                         'count=%d' % (DD_COUNT, )])
+
+                # If success, get the file chunk from the device
+                if process == 0:
                     subprocess.call(
                         ['adb', 'pull', 
-                         '/cache/adbfuse.swp', 
+                         '/mnt/asec/adbfuse.swp', 
                          '%s%s' % (self.cache, path, )])
 
-                    chunk = open('%s%s' % (self.cache, path, ))
-                    rawdata = chunk.read()
-                    chunk.close()
-                    os.unlink('%s%s' % (self.cache, path, ))
-            else:
-                rawdata = ''
-        else:
-            rawdata = '' 
+                    try:
+                        # FIXME: WE HAVE TO NOTICE THAT THIS IS A SLICE!!
+                        rawdata = subprocess.check_output(
+                            ['adb', 'shell', 'dd', 'if=%s' % path,
+                             'skip=%d' % (offset - fileData.offset, ),
+                             'bs=1', 'count=%d' % size])
+                    except CalledProcessError:
+                        pass
 
         print "Returning %d bytes" % (len(rawdata), )
         return rawdata
