@@ -19,10 +19,10 @@ from fuse import Fuse
 from datetime import datetime
 
 # TODO: it should be a parameter
-DIR_CACHE_TIMEOUT = 180          # in seconds
-FILE_CACHE_TIMEOUT = 60          # in seconds
-DD_BLOCK_SIZE = 1024
-DD_COUNT      = 1024
+DIR_CACHE_TIMEOUT  = 180          # in seconds
+FILE_CACHE_TIMEOUT = 180          # in seconds
+DD_BLOCK_SIZE      = 1024
+DD_COUNT           = 1024
 
 if not hasattr(fuse, '__version__'):
     raise RuntimeError(\
@@ -58,9 +58,37 @@ class FileData(object):
         return (datetime.now() - self.time).seconds < FILE_CACHE_TIMEOUT
 
     def contains(self, offset, size):
-        return offset >= self.chunkoffset and \
-        offset + size <= self.chunkoffset + self.chunksize:
-
+        #import pdb; pdb.set_trace()
+        return offset >= self.chunkoffset and (offset + size) <= (self.chunkoffset + self.chunksize)
+        
+    def read_data(self, path, offset, size):
+        rawdata = ''
+        try:
+            rawdata = subprocess.check_output(
+                ['dd', 'if=%s' % path, 'skip=%d' % (offset - self.chunkoffset),
+                 'bs=1', 'count=%d' % size])
+        except subprocess.CalledProcessError:
+            pass
+        return rawdata
+    
+    def create_device_cache(self, devicecache, path, offset, bs, count):
+        print "[DUMP] Dumping cache on device: offset %d, bs %d, count %d" % (offset, bs, count) 
+        subprocess.call(
+            ['adb', 'shell', 'mkdir', '-p', 
+             '%s%s' % (devicecache, path[:path.rfind('/')])])
+                
+        subprocess.call(
+            ['adb', 'shell', 'dd', 'if=%s' % path, 
+             'of=%s%s' % (devicecache, path),
+             'skip=%d' % (offset / bs), 'bs=%d' % bs, 'count=%d' % count])
+    
+    def pull(self, devicecache, cache, path):
+        print "[PULL]",
+        return_code = subprocess.call(
+            ['adb', 'pull', '%s%s' % (devicecache, path),
+             '%s%s' % (cache, path)])
+        return return_code
+                
 
 class DirectoryData(object):
 
@@ -162,59 +190,46 @@ class AdbFuse(Fuse):
             return -errno.EACCES
 
     def read(self, path, size, offset):
-        print "DEBUG -- read with path %s, size %d and offset %d" % (
-            path, size, offset, )
-
+        print "[READ] read(path=%s, size=%d, offset=%d)" % (path, size, offset, )           
+        
         rawdata = ''
+        #import pdb; pdb.set_trace()
         if self.files.has_key(path):
             fileData = self.files[path]
+            
+            # check if offset is lesser than file size attribute
+            if offset > fileData.attr.st_size:
+                return ''
+            
+            # Fix size for reads beyond the file size
+            if offset + size > fileData.attr.st_size:
+                size = fileData.attr.st_size - offset
 
             # If there is a chunk in cache check if have valid limits
             if fileData.chunksize != 0:
                 if fileData.contains(offset, size):
-                    rawdata = subprocess.check_output(
-                        ['dd', 'if=%s' % path,
-                        'skip=%d' % (offset - fileData.offset, ),
-                        'bs=1', 'count=%d' % size])
-            
-            # Check if offset is lesser than file size
-            if offset < fileData.attr.st_size:
-                # Fix size for reads beyond the file size
-                if offset + size > fileData.attr.st_size:
-                    size = fileData.attr.st_size - offset
-
-                # Slice a chunk from file on the device (tmpfs)
+                    print "[READ] Ya lo tengo en el trozo local"
+                    rawdata = fileData.read_data('%s%s' % (self.cache, path), offset, size)
+                    
+            if rawdata == '':
+                # Cache chunk missing or invalid:
+                # Check we want read beyond the file size
                 if offset + DD_BLOCK_SIZE * DD_COUNT > fileData.attr.st_size:
-                    fileData.chunksize = fileData.attr.st_size - offset
-                    process_result = subprocess.call(
-                        ['adb', 'shell', 'dd', 'if=%s' % path, 
-                         'of=%s/adbfuse.swp' % self.devicecache,
-                         'skip=%d' % offset, 'bs=1', 
-                         'count=%d' % fileData.chunksize])
+                    bs = 1
+                    count = size
                 else:
-                    process_result = subprocess.call(
-                        ['adb', 'shell', 'dd', 'if=%s' % path, 
-                         'of=%s/adbfuse.swp' % self.devicecache,
-                         'skip=%d' % offset, 'bs=%d' % (DD_BLOCK_SIZE, ),
-                         'count=%d' % (DD_COUNT, )])
+                    bs = DD_BLOCK_SIZE
+                    count = DD_COUNT
+                
+                # Slice a chunk from file on the device (tmpfs)
+                fileData.create_device_cache(self.devicecache, path, offset, bs, count)                
+                return_code = fileData.pull(self.devicecache, self.cache, path) 
 
                 # If success, get the file chunk from the device
-                if process_result == 0:
-                    subprocess.call(
-                        ['adb', 'pull', 
-                         '%s/adbfuse.swp' % self.devicecache, 
-                         '%s%s' % (self.cache, path, )])
-
-                    try:
-                        # FIXME: WE HAVE TO NOTICE THAT THIS IS A SLICE!!
-                        if offset >= fileData.chunkoffset and \
-                        offset + size <= fileData.chunkoffset + fileData.chunksize:
-                            rawdata = subprocess.check_output(
-                                ['adb', 'shell', 'dd', 'if=%s' % path,
-                                'skip=%d' % (offset - fileData.offset, ),
-                                'bs=1', 'count=%d' % size])
-                    except CalledProcessError:
-                        pass
+                if return_code == 0:
+                    fileData.chunkoffset = offset
+                    fileData.chunksize = bs * count
+                    rawdata = fileData.read_data('%s%s' % (self.cache, path), offset, size)
 
         print "Returning %d bytes" % (len(rawdata), )
         return rawdata
