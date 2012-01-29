@@ -6,7 +6,7 @@
 #    This program can be distributed under the terms of the GNU GPL v3.
 #    See the file COPYING.
 #
-#    v0.1-alpha-wip
+#    v0.2-alpha
 #
 
 import os
@@ -73,7 +73,7 @@ class FileData(object):
         return rawdata
     
     def create_device_cache(self, devicecache, path, offset, bs, count):
-        print "[ADBFUSE][DUMP] dumping cache on device: offset %d, bs %d, count %d" % (offset, bs, count) 
+        #print "[ADBFUSE][DUMP] dumping cache on device: offset %d, bs %d, count %d" % (offset, bs, count) 
         subprocess.call(
             ['adb', 'shell', 'mkdir', '-p', 
              '%s%s' % (devicecache, path[:path.rfind('/')])])
@@ -84,7 +84,7 @@ class FileData(object):
              'skip=%d' % (offset / bs), 'bs=%d' % bs, 'count=%d' % count])
     
     def pull(self, devicecache, cache, path):
-        print "[ADBFUSE][PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * "
+        #print "[ADBFUSE][PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * "
         return_code = subprocess.call(
             ['adb', 'pull', '%s%s' % (devicecache, path),
              '%s%s' % (cache, path)])
@@ -183,15 +183,15 @@ class AdbFuse(Fuse):
             return -errno.EACCES
 
     def read(self, path, size, offset):
-        print "[ADBFUSE][READ] read(path=%s, size=%d, offset=%d)" % (path, size, offset, )
+        #print "[ADBFUSE][READ] read(path=%s, size=%d, offset=%d)" % (path, size, offset, )
                 
         rawdata = ''
-        #import pdb; pdb.set_trace()
         if self.files.has_key(path):
             fileData = self.files[path]
             
-            # check if offset is bigger than file size attribute
-            if offset > fileData.attr.st_size:
+            # check if offset is bigger than file size attribute or
+            # file size is zero
+            if offset > fileData.attr.st_size or fileData.attr.st_size == 0:
                 return ''
             
             # Fix size for reads beyond the file size
@@ -200,7 +200,7 @@ class AdbFuse(Fuse):
 
             # If there is a chunk in cache check if have valid limits
             if fileData.chunksize != 0 and fileData.contains(offset, size):
-                print "[ADBFUSE][READ] target hit on valid cache"
+                #print "[ADBFUSE][READ] target hit on valid cache"
                 rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)
             else:
                 
@@ -209,7 +209,7 @@ class AdbFuse(Fuse):
                     fileData = self.files[path]
                     if not fileData.refreshing:
                         rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)
-                        print "[ADBFUSE][READ] returning %d bytes delayed" % len(rawdata)
+                        #print "[ADBFUSE][READ] returning %d bytes delayed" % len(rawdata)
                         return rawdata
                 
                 # Cache chunk missing or invalid: invalidate fileData chunk
@@ -237,36 +237,20 @@ class AdbFuse(Fuse):
                     self.files[path] = fileData
                     rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)                 
 
-        print "[ADBFUSE][READ] returning %d bytes" % (len(rawdata), )
+        #print "[ADBFUSE][READ] returning %d bytes" % (len(rawdata), )
         return rawdata
             
     def readlink(self, path):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'readlink', path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        (out_data, err_data) = process.communicate()
-
-        target = out_data.split()[0]
-        if target.startswith('/'):
-            return '.%s' % (target, )
-        else:
-            return '%s' % (target, )
+        target = subprocess.check_output(['adb', 'shell', 'readlink', path]).split()[0]
+        return '.%s' % target
 
     def unlink(self, path):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'rm', '-f', path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        subprocess.call(['adb', 'shell', 'rm', '-f', path])
 
     def rmdir(self, path):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'rmdir', path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        subprocess.call(['adb', 'shell', 'rmdir', path])
 
+    # TODO: CHECK THIS FUNCTION
     def symlink(self, path, path1):
         process = subprocess.Popen(
             ['adb', 'shell', 'ln', '-s', path, "." + path1],
@@ -274,9 +258,10 @@ class AdbFuse(Fuse):
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
-    def rename(self, source_path, destination_path):
-        print "[ADBFUSE][RNME] rename(src=%s, dst=%s" % (source_path, destination_path)
-        subprocess.call(['adb', 'shell', 'mv', source_path, destination_path])
+    # TODO: CHECK THIS FUNCTION
+    def rename(self, path, dstpath):
+        #print "[ADBFUSE][RNME] rename(src=%s, dst=%s" % (path, dstpath)
+        subprocess.call(['adb', 'shell', 'mv', path, dstpath])
         
         # Force refresh directory cache for parent
         container = path[:path.rfind('/')]
@@ -285,6 +270,7 @@ class AdbFuse(Fuse):
         except KeyError:
             pass
 
+    # TODO: CHECK THIS FUNCTION
     def link(self, path, path1):
         process = subprocess.Popen(
             ['adb', 'shell', 'ln', "." + path, "." + path1],
@@ -292,6 +278,7 @@ class AdbFuse(Fuse):
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
+    # TODO: CHECK THIS FUNCTION
     def chmod(self, path, mode):
         process = subprocess.Popen(
             ['adb', 'shell', 'chmod', "." + path, mode],
@@ -299,6 +286,7 @@ class AdbFuse(Fuse):
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
+    # TODO: CHECK THIS FUNCTION
     def chown(self, path, user, group):
         process = subprocess.Popen(
             ['adb', 'shell', 'chown', "." + path, user, group],
@@ -306,6 +294,7 @@ class AdbFuse(Fuse):
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
+    # TODO: CHECK THIS FUNCTION
     def mknod(self, path, mode, dev):
         #print "*** path: %s, mode: %s, dev: %s" % (path, mode, dev,)
         process = subprocess.Popen(
@@ -316,7 +305,7 @@ class AdbFuse(Fuse):
         #(out_data, err_data) = process.communicate()
 
     def mkdir(self, path, mode):
-        print "[ADBFUSE][MKDR] mkdir(path=%s, mode=%s)" % (path, mode)
+        #print "[ADBFUSE][MKDR] mkdir(path=%s, mode=%s)" % (path, mode)
         subprocess.call(['adb', 'shell', 'mkdir', "-m", "%s" % oct(mode), "-p", path])
         
         # Force refresh directory cache for parent
@@ -326,6 +315,7 @@ class AdbFuse(Fuse):
         except KeyError:
             pass
 
+    # TODO: CHECK THIS FUNCTION
     def utime(self, path, times):
         process = subprocess.Popen(
             ['adb', 'shell', 'touch', "-d", times, path],
