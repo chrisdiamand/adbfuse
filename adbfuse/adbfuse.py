@@ -11,6 +11,7 @@
 
 import os
 import stat
+import time
 import errno
 import subprocess
 
@@ -53,15 +54,15 @@ class FileData(object):
         self.time = datetime.now() # Creation of the File object
         self.chunkoffset = 0       # Local chunk offset
         self.chunksize = 0         # Local chunk size
+        self.refreshing = False
 
     def is_recent(self):
         return (datetime.now() - self.time).seconds < FILE_CACHE_TIMEOUT
 
     def contains(self, offset, size):
-        #import pdb; pdb.set_trace()
         return offset >= self.chunkoffset and (offset + size) <= (self.chunkoffset + self.chunksize)
         
-    def read_data(self, path, offset, size):
+    def read_local_cache(self, path, offset, size):
         rawdata = ''
         try:
             rawdata = subprocess.check_output(
@@ -72,7 +73,7 @@ class FileData(object):
         return rawdata
     
     def create_device_cache(self, devicecache, path, offset, bs, count):
-        print "[DUMP] Dumping cache on device: offset %d, bs %d, count %d" % (offset, bs, count) 
+        print "[ADBFUSE][DUMP] dumping cache on device: offset %d, bs %d, count %d" % (offset, bs, count) 
         subprocess.call(
             ['adb', 'shell', 'mkdir', '-p', 
              '%s%s' % (devicecache, path[:path.rfind('/')])])
@@ -83,7 +84,7 @@ class FileData(object):
              'skip=%d' % (offset / bs), 'bs=%d' % bs, 'count=%d' % count])
     
     def pull(self, devicecache, cache, path):
-        print "[PULL]",
+        print "[ADBFUSE][PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * "
         return_code = subprocess.call(
             ['adb', 'pull', '%s%s' % (devicecache, path),
              '%s%s' % (cache, path)])
@@ -123,13 +124,10 @@ class AdbFuse(Fuse):
         if self.files.has_key(path):
             fileData = self.files[path]
             if fileData.is_recent():
-                if path.endswith('llo'):
-                    print "File size: %d" % (fileData.attr.st_size, )
                 return fileData.attr
 
         # There are not cache data or cache data is too old
         myStat = MyStat()
-
         if path == '/':
             myStat.st_mode = stat.S_IFDIR | 0755
             myStat.st_nlink = 2
@@ -172,17 +170,12 @@ class AdbFuse(Fuse):
                     yield fuse.Direntry(r)
                 return
 
-        # There is no cache data of cache data is not recent
-        process = subprocess.Popen(
-            ['adb', 'shell', 'ls', '--color=none', "-1", path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        (out_data, err_data) = process.communicate()
-
-        content = out_data.splitlines()
-        self.dirs[path] = DirectoryData(path, content)
-        for r in content:
-            yield fuse.Direntry(r)
+        # cache outdated or does not exists
+        output = subprocess.check_output(['adb', 'shell', 'ls', '--color=none', "-1", path])
+        dirs = output.splitlines()
+        self.dirs[path] = DirectoryData(path, dirs)
+        for dir in dirs:
+            yield fuse.Direntry(dir)
 
     def open(self, path, flags):
         accmode = os.O_RDONLY | os.O_WRONLY | os.O_RDWR
@@ -190,14 +183,14 @@ class AdbFuse(Fuse):
             return -errno.EACCES
 
     def read(self, path, size, offset):
-        print "[READ] read(path=%s, size=%d, offset=%d)" % (path, size, offset, )           
-        
+        print "[ADBFUSE][READ] read(path=%s, size=%d, offset=%d)" % (path, size, offset, )
+                
         rawdata = ''
         #import pdb; pdb.set_trace()
         if self.files.has_key(path):
             fileData = self.files[path]
             
-            # check if offset is lesser than file size attribute
+            # check if offset is bigger than file size attribute
             if offset > fileData.attr.st_size:
                 return ''
             
@@ -206,32 +199,45 @@ class AdbFuse(Fuse):
                 size = fileData.attr.st_size - offset
 
             # If there is a chunk in cache check if have valid limits
-            if fileData.chunksize != 0:
-                if fileData.contains(offset, size):
-                    print "[READ] Ya lo tengo en el trozo local"
-                    rawdata = fileData.read_data('%s%s' % (self.cache, path), offset, size)
-                    
-            if rawdata == '':
-                # Cache chunk missing or invalid:
-                # Check we want read beyond the file size
+            if fileData.chunksize != 0 and fileData.contains(offset, size):
+                print "[ADBFUSE][READ] target hit on valid cache"
+                rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)
+            else:
+                
+                while fileData.refreshing:
+                    time.sleep(0.10)
+                    fileData = self.files[path]
+                    if not fileData.refreshing:
+                        rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)
+                        print "[ADBFUSE][READ] returning %d bytes delayed" % len(rawdata)
+                        return rawdata
+                
+                # Cache chunk missing or invalid: invalidate fileData chunk
+                fileData.chunksize = 0
+                fileData.refreshing = True                
+                
+                # Check if the reader want to read beyond the file size
                 if offset + DD_BLOCK_SIZE * DD_COUNT > fileData.attr.st_size:
                     bs = 1
-                    count = size
+                    #count = size
+                    count = fileData.attr.st_size - offset
                 else:
                     bs = DD_BLOCK_SIZE
                     count = DD_COUNT
                 
                 # Slice a chunk from file on the device (tmpfs)
-                fileData.create_device_cache(self.devicecache, path, offset, bs, count)                
-                return_code = fileData.pull(self.devicecache, self.cache, path) 
+                fileData.create_device_cache(self.devicecache, path, offset, bs, count)
+                return_code = fileData.pull(self.devicecache, self.cache, path)
 
                 # If success, get the file chunk from the device
                 if return_code == 0:
                     fileData.chunkoffset = offset
                     fileData.chunksize = bs * count
-                    rawdata = fileData.read_data('%s%s' % (self.cache, path), offset, size)
+                    fileData.refreshing = False
+                    self.files[path] = fileData
+                    rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)                 
 
-        print "Returning %d bytes" % (len(rawdata), )
+        print "[ADBFUSE][READ] returning %d bytes" % (len(rawdata), )
         return rawdata
             
     def readlink(self, path):
@@ -268,12 +274,16 @@ class AdbFuse(Fuse):
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
-    def rename(self, path, path1):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'mv', "." + path, "." + path1],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+    def rename(self, source_path, destination_path):
+        print "[ADBFUSE][RNME] rename(src=%s, dst=%s" % (source_path, destination_path)
+        subprocess.call(['adb', 'shell', 'mv', source_path, destination_path])
+        
+        # Force refresh directory cache for parent
+        container = path[:path.rfind('/')]
+        try:
+            self.dirs.pop(container)
+        except KeyError:
+            pass
 
     def link(self, path, path1):
         process = subprocess.Popen(
@@ -306,15 +316,19 @@ class AdbFuse(Fuse):
         #(out_data, err_data) = process.communicate()
 
     def mkdir(self, path, mode):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'mkdir', "." + path, mode],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        print "[ADBFUSE][MKDR] mkdir(path=%s, mode=%s)" % (path, mode)
+        subprocess.call(['adb', 'shell', 'mkdir', "-m", "%s" % oct(mode), "-p", path])
+        
+        # Force refresh directory cache for parent
+        container = path[:path.rfind('/')]
+        try:
+            self.dirs.pop(container)
+        except KeyError:
+            pass
 
     def utime(self, path, times):
         process = subprocess.Popen(
-            ['adb', 'shell', 'touch', "-d", times, "." + path],
+            ['adb', 'shell', 'touch', "-d", times, path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
