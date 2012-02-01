@@ -264,27 +264,19 @@ class AdbFuse(Fuse):
     def symlink(self, path, path1):
         return -errno.ENOSYS
 
-    # TODO: CHECK THIS FUNCTION
     def rename(self, path, dstpath):
         #print "[ADBFUSE][RNME] rename(src=%s, dst=%s" % (path, dstpath)
         subprocess.call(['adb', 'shell', 'mv', path, dstpath])
         self.force_refresh(path)
 
-    # TODO: CHECK THIS FUNCTION
     def link(self, path, path1):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'ln', "." + path, "." + path1],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        return -errno.ENOSYS
 
-    # TODO: CHECK THIS FUNCTION
     def chmod(self, path, mode):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'chmod', "." + path, mode],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        #print "[ADBFUSE][CHMO] chmod(%s, %s)" % (path, oct(mode))
+        mode = "%s" % oct(mode)
+        subprocess.call(['adb', 'shell', 'chmod', mode[3:], path])
+        self.force_refresh_file(path)
 
     # TODO: CHECK THIS FUNCTION
     def chown(self, path, user, group):
@@ -311,6 +303,12 @@ class AdbFuse(Fuse):
         """ Force directory refresh for a directory path """
         try:
             self.dirs.pop(path[:path.rfind('/')])
+        except KeyError:
+            pass
+        
+    def force_refresh_file(self, filename):
+        try:
+            self.files.pop(filename)
         except KeyError:
             pass
 
