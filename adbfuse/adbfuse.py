@@ -111,7 +111,7 @@ class AdbFuse(Fuse):
         if not os.path.isdir(self.cache):
             os.makedirs(self.cache)
 
-        # Create if not exists the remote cache directory
+        # Create if does not exists the remote cache directory
         self.devicecache = '/mnt/asec/.adbfuse'
         subprocess.call(['adb', 'shell', 'mkdir', '-p', '%s' % self.devicecache])
             
@@ -119,12 +119,19 @@ class AdbFuse(Fuse):
         self.files = {}
         fuse.Fuse.__init__(self, *args, **kw)
 
+    # FIXME: Use pexpect to avoid open a shell eveytime
     def getattr(self, path):
         # Search for data in the files cache data
         if self.files.has_key(path):
             fileData = self.files[path]
             if fileData.is_recent():
-                return fileData.attr
+                if path == '/':
+                    myStat = MyStat()
+                    myStat.st_mode = stat.S_IFDIR | 0755
+                    myStat.st_nlink = 2
+                    return myStat
+                else:
+                    return fileData.attr
 
         # There are not cache data or cache data is too old
         myStat = MyStat()
@@ -171,9 +178,10 @@ class AdbFuse(Fuse):
                 return
 
         # cache outdated or does not exists
-        output = subprocess.check_output(['adb', 'shell', 'ls', '--color=none', "-1", path])
+        output = subprocess.check_output(['adb', 'shell', 'ls',  '-a','--color=none', "-1", path])
         dirs = output.splitlines()
         self.dirs[path] = DirectoryData(path, dirs)
+        
         for dir in dirs:
             yield fuse.Direntry(dir)
 
@@ -242,7 +250,11 @@ class AdbFuse(Fuse):
             
     def readlink(self, path):
         target = subprocess.check_output(['adb', 'shell', 'readlink', path]).split()[0]
+        
+#        if target.startswith('/'):
         return '.%s' % target
+#        else:
+#            return '%s' % target
 
     def unlink(self, path):
         subprocess.call(['adb', 'shell', 'rm', '-f', path])
@@ -252,6 +264,7 @@ class AdbFuse(Fuse):
 
     # TODO: CHECK THIS FUNCTION
     def symlink(self, path, path1):
+        print "[ADBFUSE][LINK] symlink(%s, %s)" % (path, path1)
         process = subprocess.Popen(
             ['adb', 'shell', 'ln', '-s', path, "." + path1],
             stdout=subprocess.PIPE,
@@ -317,8 +330,9 @@ class AdbFuse(Fuse):
 
     # TODO: CHECK THIS FUNCTION
     def utime(self, path, times):
+        print "[ADBFUSE][UTIM] utime(self, %s, %s)" % (path, str(times))
         process = subprocess.Popen(
-            ['adb', 'shell', 'touch', "-d", times, path],
+            ['adb', 'shell', 'touch', path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
