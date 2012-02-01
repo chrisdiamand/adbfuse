@@ -307,15 +307,8 @@ class AdbFuse(Fuse):
             stderr=subprocess.PIPE)
         #(out_data, err_data) = process.communicate()
 
-    # TODO: CHECK THIS FUNCTION
     def mknod(self, path, mode, dev):
-        #print "*** path: %s, mode: %s, dev: %s" % (path, mode, dev,)
-        process = subprocess.Popen(
-            #['adb', 'shell', 'mknod', "-m", mode, '".' + path + '"', dev],
-            ['adb', 'shell', 'touch', '.' + path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        return -errno.EPERM        
 
     def mkdir(self, path, mode):
         #print "[ADBFUSE][MKDR] mkdir(path=%s, mode=%s)" % (path, mode)
