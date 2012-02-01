@@ -1,0 +1,20 @@
+This fuse filesystem has been tested with:
+
+· python-fuse
+· python 2.7
+
+It is necessary to have the android phone rooted and BusyBox installed. Mine is the version shipped with CyanogenMod 7.1 for HTC Desire (v1.19.1-cm71 bionic).
+
+`adb' command should be in the $PATH
+
+Please note that this is a preliminary version and it may have bugs or errors.
+Currently is your responsability to have all the requirements cause the
+application does not check at all if you have `adb' or many other errors.
+
+If you have the requisites and it does not work for you, please let me know
+and I will do my best to improve the project.
+
+Use at you own risk.
+
+
+Juan Martín <android@nauj27.com>
