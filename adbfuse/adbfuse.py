@@ -250,17 +250,15 @@ class AdbFuse(Fuse):
             
     def readlink(self, path):
         target = subprocess.check_output(['adb', 'shell', 'readlink', path]).split()[0]
-        
-#        if target.startswith('/'):
         return '.%s' % target
-#        else:
-#            return '%s' % target
 
     def unlink(self, path):
         subprocess.call(['adb', 'shell', 'rm', '-f', path])
+        self.force_refresh(path)
 
     def rmdir(self, path):
         subprocess.call(['adb', 'shell', 'rmdir', path])
+        self.force_refresh(path)
 
     # TODO: CHECK THIS FUNCTION
     def symlink(self, path, path1):
@@ -275,13 +273,7 @@ class AdbFuse(Fuse):
     def rename(self, path, dstpath):
         #print "[ADBFUSE][RNME] rename(src=%s, dst=%s" % (path, dstpath)
         subprocess.call(['adb', 'shell', 'mv', path, dstpath])
-        
-        # Force refresh directory cache for parent
-        container = path[:path.rfind('/')]
-        try:
-            self.dirs.pop(container)
-        except KeyError:
-            pass
+        self.force_refresh(path)
 
     # TODO: CHECK THIS FUNCTION
     def link(self, path, path1):
@@ -308,22 +300,24 @@ class AdbFuse(Fuse):
         #(out_data, err_data) = process.communicate()
 
     def mknod(self, path, mode, dev):
-        return -errno.EPERM        
+        return -errno.EPERM
 
     def mkdir(self, path, mode):
         #print "[ADBFUSE][MKDR] mkdir(path=%s, mode=%s)" % (path, mode)
         subprocess.call(['adb', 'shell', 'mkdir', "-m", "%s" % oct(mode), "-p", path])
-        
-        # Force refresh directory cache for parent
-        container = path[:path.rfind('/')]
-        try:
-            self.dirs.pop(container)
-        except KeyError:
-            pass
+        self.force_refresh(path)
 
     def utime(self, path, times):
         #print "[ADBFUSE][UTIM] utime(self, %s, %s)" % (path, str(times))
         subprocess.call(['adb', 'shell', 'touch', path])
+        self.force_refresh(path)
+        
+    def force_refresh(self, path):
+        """ Force directory refresh for a directory path """
+        try:
+            self.dirs.pop(path[:path.rfind('/')])
+        except KeyError:
+            pass
 
 def main():
     usage="""
