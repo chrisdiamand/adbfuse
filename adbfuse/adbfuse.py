@@ -278,13 +278,14 @@ class AdbFuse(Fuse):
         subprocess.call(['adb', 'shell', 'chmod', mode[3:], path])
         self.force_refresh_file(path)
 
-    # TODO: CHECK THIS FUNCTION
     def chown(self, path, user, group):
-        process = subprocess.Popen(
-            ['adb', 'shell', 'chown', "." + path, user, group],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        #print "[ADBFUSE][CHOW] chown(path, %s, %s)" % (user, group)
+        if user == -1:
+            user = self.files[path].attr.st_uid
+        if group == -1:
+            group = self.files[path].attr.st_gid 
+        subprocess.call(['adb', 'shell', 'chown', '%s:%s' % (user, group), path])
+        self.force_refresh_file(path)
 
     def mknod(self, path, mode, dev):
         return -errno.EPERM
