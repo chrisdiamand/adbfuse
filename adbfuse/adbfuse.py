@@ -6,7 +6,7 @@
 #    This program can be distributed under the terms of the GNU GPL v3.
 #    See the file COPYING.
 #
-#    v0.2-alpha
+#    v1.0
 #
 
 import os
