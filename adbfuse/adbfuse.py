@@ -260,14 +260,9 @@ class AdbFuse(Fuse):
         subprocess.call(['adb', 'shell', 'rmdir', path])
         self.force_refresh(path)
 
-    # TODO: CHECK THIS FUNCTION
+    # TODO: in all partitions other than fat it should be possible
     def symlink(self, path, path1):
-        print "[ADBFUSE][LINK] symlink(%s, %s)" % (path, path1)
-        process = subprocess.Popen(
-            ['adb', 'shell', 'ln', '-s', path, "." + path1],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        return -errno.ENOSYS
 
     # TODO: CHECK THIS FUNCTION
     def rename(self, path, dstpath):
