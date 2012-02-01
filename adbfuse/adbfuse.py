@@ -328,14 +328,9 @@ class AdbFuse(Fuse):
         except KeyError:
             pass
 
-    # TODO: CHECK THIS FUNCTION
     def utime(self, path, times):
-        print "[ADBFUSE][UTIM] utime(self, %s, %s)" % (path, str(times))
-        process = subprocess.Popen(
-            ['adb', 'shell', 'touch', path],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE)
-        #(out_data, err_data) = process.communicate()
+        #print "[ADBFUSE][UTIM] utime(self, %s, %s)" % (path, str(times))
+        subprocess.call(['adb', 'shell', 'touch', path])
 
 def main():
     usage="""
