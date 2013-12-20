@@ -192,7 +192,7 @@ class AdbFuse(Fuse):
                 return
 
         # cache outdated or does not exists
-        output = subprocess.check_output(['adb', 'shell', 'ls',  '-a','--color=none', "-1", path])
+        output = subprocess.check_output(['adb', 'shell', 'ls',  '-a', path])
         dirs = output.splitlines()
         self.dirs[path] = DirectoryData(path, dirs)
 
