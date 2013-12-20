@@ -264,7 +264,10 @@ class AdbFuse(Fuse):
 
     def readlink(self, path):
         target = subprocess.check_output(['adb', 'shell', 'readlink', path]).split()[0]
-        return '.%s' % target
+        if target.startswith("/"):
+            target = target[1:]
+        ret = self.fuse_args.mountpoint + "/" + target
+        return ret
 
     def unlink(self, path):
         subprocess.call(['adb', 'shell', 'rm', '-f', path])
