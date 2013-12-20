@@ -75,7 +75,7 @@ class FileData(object):
 
     def contains(self, offset, size):
         return offset >= self.chunkoffset and (offset + size) <= (self.chunkoffset + self.chunksize)
-        
+
     def read_local_cache(self, path, offset, size):
         rawdata = ''
         try:
@@ -85,25 +85,25 @@ class FileData(object):
         except subprocess.CalledProcessError:
             pass
         return rawdata
-    
+
     def create_device_cache(self, devicecache, path, offset, bs, count):
-        #print "[ADBFUSE][DUMP] dumping cache on device: offset %d, bs %d, count %d" % (offset, bs, count) 
+        #print "[ADBFUSE][DUMP] dumping cache on device: offset %d, bs %d, count %d" % (offset, bs, count)
         subprocess.call(
-            ['adb', 'shell', 'mkdir', '-p', 
+            ['adb', 'shell', 'mkdir', '-p',
              '%s%s' % (devicecache, path[:path.rfind('/')])])
-                
+
         subprocess.call(
-            ['adb', 'shell', 'dd', 'if=%s' % path, 
+            ['adb', 'shell', 'dd', 'if=%s' % path,
              'of=%s%s' % (devicecache, path),
              'skip=%d' % (offset / bs), 'bs=%d' % bs, 'count=%d' % count])
-    
+
     def pull(self, devicecache, cache, path):
         #print "[ADBFUSE][PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * [PULL] * "
         return_code = subprocess.call(
             ['adb', 'pull', '%s%s' % (devicecache, path),
              '%s%s' % (cache, path)])
         return return_code
-                
+
 
 class DirectoryData(object):
 
@@ -128,7 +128,7 @@ class AdbFuse(Fuse):
         # Create if does not exists the remote cache directory
         self.devicecache = '/mnt/asec/.adbfuse'
         subprocess.call(['adb', 'shell', 'mkdir', '-p', '%s' % self.devicecache])
-            
+
         self.dirs = {}
         self.files = {}
         fuse.Fuse.__init__(self, *args, **kw)
@@ -195,7 +195,7 @@ class AdbFuse(Fuse):
         output = subprocess.check_output(['adb', 'shell', 'ls',  '-a','--color=none', "-1", path])
         dirs = output.splitlines()
         self.dirs[path] = DirectoryData(path, dirs)
-        
+
         for dir in dirs:
             yield fuse.Direntry(dir)
 
@@ -206,16 +206,16 @@ class AdbFuse(Fuse):
 
     def read(self, path, size, offset):
         #print "[ADBFUSE][READ] read(path=%s, size=%d, offset=%d)" % (path, size, offset, )
-                
+
         rawdata = ''
         if self.files.has_key(path):
             fileData = self.files[path]
-            
+
             # check if offset is bigger than file size attribute or
             # file size is zero
             if offset > fileData.attr.st_size or fileData.attr.st_size == 0:
                 return ''
-            
+
             # Fix size for reads beyond the file size
             if offset + size > fileData.attr.st_size:
                 size = fileData.attr.st_size - offset
@@ -225,7 +225,7 @@ class AdbFuse(Fuse):
                 #print "[ADBFUSE][READ] target hit on valid cache"
                 rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)
             else:
-                
+
                 while fileData.refreshing:
                     time.sleep(0.10)
                     fileData = self.files[path]
@@ -233,11 +233,11 @@ class AdbFuse(Fuse):
                         rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)
                         #print "[ADBFUSE][READ] returning %d bytes delayed" % len(rawdata)
                         return rawdata
-                
+
                 # Cache chunk missing or invalid: invalidate fileData chunk
                 fileData.chunksize = 0
-                fileData.refreshing = True                
-                
+                fileData.refreshing = True
+
                 # Check if the reader want to read beyond the file size
                 if offset + DD_BLOCK_SIZE * DD_COUNT > fileData.attr.st_size:
                     bs = 1
@@ -246,7 +246,7 @@ class AdbFuse(Fuse):
                 else:
                     bs = DD_BLOCK_SIZE
                     count = DD_COUNT
-                
+
                 # Slice a chunk from file on the device (tmpfs)
                 fileData.create_device_cache(self.devicecache, path, offset, bs, count)
                 return_code = fileData.pull(self.devicecache, self.cache, path)
@@ -257,11 +257,11 @@ class AdbFuse(Fuse):
                     fileData.chunksize = bs * count
                     fileData.refreshing = False
                     self.files[path] = fileData
-                    rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)                 
+                    rawdata = fileData.read_local_cache('%s%s' % (self.cache, path), offset, size)
 
         #print "[ADBFUSE][READ] returning %d bytes" % (len(rawdata), )
         return rawdata
-            
+
     def readlink(self, path):
         target = subprocess.check_output(['adb', 'shell', 'readlink', path]).split()[0]
         return '.%s' % target
@@ -297,7 +297,7 @@ class AdbFuse(Fuse):
         if user == -1:
             user = self.files[path].attr.st_uid
         if group == -1:
-            group = self.files[path].attr.st_gid 
+            group = self.files[path].attr.st_gid
         subprocess.call(['adb', 'shell', 'chown', '%s:%s' % (user, group), path])
         self.force_refresh_file(path)
 
@@ -313,14 +313,14 @@ class AdbFuse(Fuse):
         #print "[ADBFUSE][UTIM] utime(self, %s, %s)" % (path, str(times))
         subprocess.call(['adb', 'shell', 'touch', path])
         self.force_refresh(path)
-        
+
     def force_refresh(self, path):
         """ Force directory refresh for a directory path """
         try:
             self.dirs.pop(path[:path.rfind('/')])
         except KeyError:
             pass
-        
+
     def force_refresh_file(self, filename):
         try:
             self.files.pop(filename)
