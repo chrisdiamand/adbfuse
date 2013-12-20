@@ -126,7 +126,7 @@ class AdbFuse(Fuse):
             os.makedirs(self.cache)
 
         # Create if does not exists the remote cache directory
-        self.devicecache = '/mnt/asec/.adbfuse'
+        self.devicecache = '/sdcard/.adbfuse'
         subprocess.call(['adb', 'shell', 'mkdir', '-p', '%s' % self.devicecache])
 
         self.dirs = {}
