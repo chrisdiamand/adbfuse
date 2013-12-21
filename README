@@ -7,6 +7,11 @@ It is necessary to have the android phone rooted and BusyBox installed. Mine is 
 
 `adb' command should be in the $PATH
 
+To run it as a normal user (not root), make sure your user is in the
+`plugdev' (for ADB) and `fuse' groups. This can be done by running:
+  $ sudo usermod -aG plugdev username
+  $ sudo usermod -aG fuse username
+
 Please note that this is a preliminary version and it may have bugs or errors.
 Currently is your responsability to have all the requirements cause the
 application does not check at all if you have `adb' or many other errors.
